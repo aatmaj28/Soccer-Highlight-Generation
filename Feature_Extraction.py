@@ -25,24 +25,46 @@ RANKINGS = {
 def count_videos_in_folder(folder_path):
     return sum(1 for file in os.listdir(folder_path) if file.endswith(".mp4"))
 
-def extract_events_with_context(data, context_time=10000):
+def extract_events_with_context(data, context_time=10000, overlap_threshold=5000):
+    
     events = []
 
     for idx, annotation in enumerate(data["annotations"]):
         event_label = annotation["label"]
         event_position = int(annotation["position"])
+        game_time = annotation["gameTime"]
+        half = game_time.split(" - ")[0]
         start_time = max(0, event_position - context_time)
         end_time = event_position + context_time
+        label_rank = RANKINGS.get(event_label, 15)
 
+        is_overlapping = False
+        for existing_event in events:
+            if existing_event["half"] == half:
+                if abs(existing_event["event_position"] - event_position) <= overlap_threshold:
+                    existing_rank = RANKINGS.get(existing_event["label"], 15)
+                    if label_rank < existing_rank:
+                        existing_event.update({
+                            "label": event_label,
+                            "event_position": event_position,
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "gameTime": game_time,
+                            "index": idx
+                        })
+                    is_overlapping = True
+                    break
 
-        events.append({
-            "label": event_label,
-            "event_position": event_position,
-            "start_time": start_time,
-            "end_time": end_time,
-            "gameTime": annotation["gameTime"],
-            "index": idx
-        })
+        if not is_overlapping:
+            events.append({
+                "label": event_label,
+                "event_position": event_position,
+                "start_time": start_time,
+                "end_time": end_time,
+                "gameTime": game_time,
+                "half": half,
+                "index": idx
+            })
 
     return events
 
