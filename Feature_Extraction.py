@@ -25,7 +25,7 @@ RANKINGS = {
 def count_videos_in_folder(folder_path):
     return sum(1 for file in os.listdir(folder_path) if file.endswith(".mp4"))
 
-def extract_events_with_context(data, context_time=10000, overlap_threshold=5000):
+def extract_events_with_context(data, context_time=5000, overlap_threshold=3000):
     
     events = []
 
@@ -119,7 +119,7 @@ def create_video_from_frames(frames, output_video_path, frame_rate=30):
     print(f"Video created at {output_video_path}")
 
 
-def extract_event_frames(data, video_path, output_dir, context_time=10000):
+def extract_event_frames(data, video_path, output_dir, context_time=5000):
     events = extract_events_with_context(data, context_time)
     print(video_path)
 
@@ -146,7 +146,7 @@ def extract_event_frames(data, video_path, output_dir, context_time=10000):
 
         
         video_count = count_videos_in_folder(label_dir)
-        if video_count >= 150:
+        if video_count >= 100:
             print(f"Skipping frame extraction for {folder_name}, as it already contains {video_count} videos.")
         else:
         # Extract frames
@@ -193,18 +193,18 @@ def process_league_videos(root_path):
                 # Extract frames and create videos
                 print(f"Processing match: {match}")
                 extract_event_frames(data, match_path, output_dir)
-                files_to_delete = ["1_720p.mkv", "2_720p.mkv"]
+                # files_to_delete = ["1_720p.mkv", "2_720p.mkv"]
 
-                for file_name in files_to_delete:
-                    file_path = os.path.join(match_path, file_name)
-                    try:
-                        if os.path.isfile(file_path):  # Ensure it is a file
-                            os.remove(file_path)
-                            print(f"Deleted processed video file: {file_path}")
-                        else:
-                            print(f"File not found or not a regular file: {file_path}")
-                    except OSError as e:
-                        print(f"Error deleting file {file_path}: {e}")
+                # for file_name in files_to_delete:
+                #     file_path = os.path.join(match_path, file_name)
+                #     try:
+                #         if os.path.isfile(file_path):  # Ensure it is a file
+                #             os.remove(file_path)
+                #             print(f"Deleted processed video file: {file_path}")
+                #         else:
+                #             print(f"File not found or not a regular file: {file_path}")
+                #     except OSError as e:
+                #         print(f"Error deleting file {file_path}: {e}")
 
 
 # Root path for the videos

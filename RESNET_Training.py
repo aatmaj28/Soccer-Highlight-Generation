@@ -56,7 +56,7 @@ def get_label_from_folder(folder_name):
     return folder_name
 
 # Specify the root directory containing the extracted folders
-root_directory = "/home/kothari.je/videos/70_Videos_Each"
+root_directory = "/home/kothari.je/videos/extracted"
 
 # Initialize lists to store features and labels
 all_features = []
@@ -115,7 +115,7 @@ print("Feature extraction completed.")
 print(all_features.cpu().shape)
 
 # Save features and labels to disk
-save_path = "videos/features/labels_70_Each.pt"  # Specify the save path
+save_path = "videos/features/labels_10_sec_each.pt"  # Specify the save path
 torch.save({
     'features': all_features.cpu(),  # Move back to CPU before saving
     'labels': all_labels.cpu(),      # Move back to CPU before saving
