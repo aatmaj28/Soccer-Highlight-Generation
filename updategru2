@@ -1,0 +1,869 @@
+!pip install SoccerNet --upgrade
+import SoccerNet
+from SoccerNet.Downloader import SoccerNetDownloader
+mySoccerNetDownloader=SoccerNetDownloader(LocalDirectory="'/Users/devadarshini/Desktop/dataset")
+mySoccerNetDownloader.password = "s0cc3rn3t"
+mySoccerNetDownloader.downloadGames(files=["1_720p.mkv", "2_720p.mkv"], split=["train","valid","test","challenge"])
+mySoccerNetDownloader.downloadDataTask(task="spotting-ball-2023", split=["train", "valid", "test", "challenge"], password="s0cc3rn3t")
+mySoccerNetDownloader.downloadGames(files=["Labels-v2.json"], split=["train","valid","test"])
+import os
+import json
+import cv2
+
+def extract_goal_events_with_context(data, context_time=10000):
+    goal_events = []
+
+
+    for annotation in data["annotations"]:
+        if annotation["label"] == "Goal":
+            goal_position = int(annotation["position"])
+            start_time = max(0, goal_position - context_time)
+            end_time = goal_position + context_time
+
+            goal_events.append({
+                "label": "Goal",
+                "goal_position": goal_position,
+                "start_time": start_time,
+                "end_time": end_time
+            })
+
+    return goal_events
+
+
+def extract_frames_in_timeframe(video_path, start_time, end_time, output_dir, frame_rate=30):
+    # Open the video file
+    video = cv2.VideoCapture(video_path)
+
+    if not video.isOpened():
+        print(f"Error: Could not open video {video_path}")
+        return []
+
+    # Convert milliseconds to seconds for OpenCV
+    start_time_sec = start_time / 1000.0
+    end_time_sec = end_time / 1000.0
+
+    # Set the video position to the start time
+    video.set(cv2.CAP_PROP_POS_MSEC, start_time_sec * 1000)
+
+    frames = []
+    frame_count = 0
+    success = True
+
+    # Calculate the number of frames to extract
+    total_frames_to_extract = int((end_time_sec - start_time_sec) * frame_rate)
+
+    while success and frame_count < total_frames_to_extract:
+        success, frame = video.read()
+
+        if not success:
+            break
+
+        # Save each frame as an image and keep track of it
+        frame_file = os.path.join(output_dir, f"frame_{frame_count}.jpg")
+        cv2.imwrite(frame_file, frame)
+        frames.append(frame_file)  # Save file path for later use
+
+        frame_count += 1
+
+    video.release()
+    print(f"Extracted {frame_count} frames from {start_time_sec} to {end_time_sec} seconds.")
+    return frames
+
+
+def create_video_from_frames(frame_files, output_video_path, frame_rate=30):
+    if not frame_files:
+        print(f"No frames to create video at {output_video_path}.")
+        return
+
+    # Read the first frame to get the frame size
+    first_frame = cv2.imread(frame_files[0])
+    height, width, layers = first_frame.shape
+
+    # Define the video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 'mp4v' for .mp4 format
+    video_writer = cv2.VideoWriter(output_video_path, fourcc, frame_rate, (width, height))
+
+    for frame_file in frame_files:
+        frame = cv2.imread(frame_file)
+        video_writer.write(frame)
+
+    video_writer.release()
+    print(f"Video created at {output_video_path}")
+
+def extract_goal_frames(data, video_path, output_dir, context_time=10000):
+    goal_events = []
+
+    # Loop through annotations to find 'Goal' events
+    for annotation in data["annotations"]:
+        if annotation["label"] == "Goal":
+            # Extract current position of the 'Goal' event
+            goal_position = int(annotation["position"])
+
+            # Calculate start and end time (10 seconds before and after)
+            start_time = max(0, goal_position - context_time)
+            end_time = goal_position + context_time
+
+            goal_events.append({
+                "label": "Goal",
+                "goal_position": goal_position,
+                "start_time": start_time,
+                "end_time": end_time
+            })
+
+            # Create directory for goal frames
+            goal_output_dir = os.path.join(output_dir, f"goal_at_{goal_position}")
+            if not os.path.exists(goal_output_dir):
+                os.makedirs(goal_output_dir)
+
+            # Extract frames for this goal event
+            frames = extract_frames_in_timeframe(video_path, start_time, end_time, goal_output_dir)
+
+            # Collate the frames into a video
+            if frames:
+                output_video_path = os.path.join(output_dir, f"goal_at_{goal_position}.mp4")
+                create_video_from_frames(frames, output_video_path)
+
+
+    return goal_events
+
+with open("/Users/devadarshini/Downloads/'/Users/devadarshini/Desktop/dataset/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/Labels-v2.json") as f:
+  data = json.load(f)
+  print(data)
+
+
+video_path = "/Users/devadarshini/Downloads/'/Users/devadarshini/Desktop/dataset/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/1_720p.mkv"
+
+output_dir = "/Users/devadarshini/Downloads/'/Users/devadarshini/Desktop/dataset/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/extracted"
+
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
+
+goal_events = extract_goal_frames(data, video_path, output_dir)
+
+if not goal_events:
+    print("No 'Goal' events found.")
+else:
+    print(f"Extracted frames for {len(goal_events)} 'Goal' events.")
+import os
+import json
+import cv2
+
+
+# Rankings of event labels
+RANKINGS = {
+    "Kick-off": 1,
+    "Goal": 2,
+    "Shots on target": 3,
+    "Red card": 4,
+    "Corner": 5,
+    "Yellow card": 6,
+    "Shots off target": 7,
+    "Foul": 8,
+    "Direct free-kick": 9,
+    "Offside": 10,
+    "Clearance": 11,
+    "Indirect free-kick": 12,
+    "Throw-in": 13,
+    "Ball out of play": 14,
+    "Substitution": 15
+}
+
+def extract_events_with_context(data, context_time=10000):
+    events = []
+
+    for idx, annotation in enumerate(data["annotations"]):
+        event_label = annotation["label"]
+        event_position = int(annotation["position"])
+        start_time = max(0, event_position - context_time)
+        end_time = event_position + context_time
+
+
+        events.append({
+            "label": event_label,
+            "event_position": event_position,
+            "start_time": start_time,
+            "end_time": end_time,
+            "gameTime": annotation["gameTime"],
+            "index": idx
+        })
+
+    return events
+
+
+def extract_frames_in_timeframe(video_path, start_time, end_time, frame_rate=30):
+    video = cv2.VideoCapture(video_path)
+
+    if not video.isOpened():
+        print(f"Error: Could not open video {video_path}")
+        return []
+
+    start_time_sec = start_time / 1000.0
+    end_time_sec = end_time / 1000.0
+
+    video.set(cv2.CAP_PROP_POS_MSEC, start_time_sec * 1000)
+
+    frames = []
+    frame_count = 0
+    success = True
+
+    total_frames_to_extract = int((end_time_sec - start_time_sec) * frame_rate)
+
+    while success and frame_count < total_frames_to_extract:
+        success, frame = video.read()
+
+        if not success:
+            break
+
+        frames.append(frame)
+
+        frame_count += 1
+
+    video.release()
+    print(f"Extracted {frame_count} frames from {start_time_sec} to {end_time_sec} seconds.")
+    return frames
+
+
+def create_video_from_frames(frames, output_video_path, frame_rate=30):
+    if not frames:
+        print(f"No frames to create video at {output_video_path}.")
+        return
+
+    height, width, layers = frames[0].shape
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(output_video_path, fourcc, frame_rate, (width, height))
+
+    for frame in frames:
+        video_writer.write(frame)
+
+    video_writer.release()
+    print(f"Video created at {output_video_path}")
+
+
+def extract_event_frames(data, video_path, output_dir, context_time=10000):
+    events = extract_events_with_context(data, context_time)
+    print(video_path)
+
+    for event in events:
+        event_label = event["label"]
+        event_position = event["event_position"]
+        start_time = event["start_time"]
+        end_time = event["end_time"]
+        half = event["gameTime"][:1]
+        unique_index = event["index"]
+        
+        path = os.path.join(video_path, f"{half}_720p.mkv")
+        if not os.path.exists(path):
+            print(f"Error: Video file {path} does not exist.")
+            continue
+
+        label_rank = RANKINGS.get(event_label, 15)  # Default rank to 15 if label is not in RANKINGS
+        folder_name = event_label if label_rank <= 10 else "nothing"
+
+        # Create label-specific folder if not exists
+        label_dir = os.path.join(output_dir, folder_name)
+        if not os.path.exists(label_dir):
+            os.makedirs(label_dir)
+
+        # Extract frames
+        frames = extract_frames_in_timeframe(path, start_time, end_time)
+
+        # Create a video for the event
+        if frames:
+            output_video_path = os.path.join(label_dir, f"{folder_name}_half_{half}_at_{event_position}_index_{unique_index}.mp4")
+            create_video_from_frames(frames, output_video_path)
+
+    return events
+
+
+# # Load the JSON data
+# with open("/FAIData/videos/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/Labels-v2.json") as f:
+#     data = json.load(f)
+
+# # Define video path and output directory
+# video_path = "/FAIData/videos/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/1_720p.mkv"
+# output_dir = "/FAIData/videos/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/extracted"
+
+# if not os.path.exists(output_dir):
+#     os.makedirs(output_dir)
+
+# # Extract frames for all event types and store videos in respective label folders
+# event_frames = extract_event_frames(data, video_path, output_dir)
+
+# if not event_frames:
+#     print("No events found.")
+# else:
+#     print(f"Extracted videos for {len(event_frames)} events.")
+
+
+def process_league_videos(root_path):
+    for league in os.listdir(root_path):
+        league_path = os.path.join(root_path, league)
+        if not os.path.isdir(league_path):
+            continue
+
+        for season in os.listdir(league_path):
+            season_path = os.path.join(league_path, season)
+            if not os.path.isdir(season_path):
+                continue
+
+            for match in os.listdir(season_path):
+                match_path = os.path.join(season_path, match)
+                if not os.path.isdir(match_path):
+                    continue
+
+                # Load the JSON file
+                label_file_path = os.path.join(match_path, "Labels-v2.json")
+                if not os.path.exists(label_file_path):
+                    print(f"No label file found in {match_path}. Skipping...")
+                    continue
+
+                with open(label_file_path) as f:
+                    data = json.load(f)
+
+                # Define output directory
+                output_dir = os.path.join(root_path, "extracted")
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+
+                # Extract frames and create videos
+                print(f"Processing match: {match}")
+                extract_event_frames(data, match_path, output_dir)
+
+
+# Root path for the videos
+root_path = "/Users/devadarshini/Downloads/'/Users/devadarshini/Desktop/dataset/"
+
+# Process all league videos
+process_league_videos(root_path)import os
+import json
+import cv2
+from pydub import AudioSegment
+
+# Rankings of event labels
+RANKINGS = {
+    "Kick-off": 1,
+    "Goal": 2,
+    "Shots on target": 3,
+    "Red card": 4,
+    "Corner": 5,
+    "Yellow card": 6,
+    "Shots off target": 7,
+    "Foul": 8,
+    "Direct free-kick": 9,
+    "Offside": 10,
+    "Clearance": 11,
+    "Indirect free-kick": 12,
+    "Throw-in": 13,
+    "Ball out of play": 14,
+    "Substitution": 15
+}
+
+def extract_events_with_context(data, context_time=10000):
+    events = []
+
+    for idx, annotation in enumerate(data["annotations"]):
+        event_label = annotation["label"]
+        event_position = int(annotation["position"])
+        start_time = max(0, event_position - context_time)
+        end_time = event_position + context_time
+
+        events.append({
+            "label": event_label,
+            "event_position": event_position,
+            "start_time": start_time,
+            "end_time": end_time,
+            "gameTime": annotation["gameTime"],
+            "index": idx
+        })
+
+    return events
+
+
+def extract_audio_in_timeframe(video_path, start_time, end_time, audio_rate=44100):
+    # Extract audio from video using pydub
+    audio = AudioSegment.from_file(video_path, format="mp4")
+    
+    start_time_ms = start_time  # start_time is in milliseconds
+    end_time_ms = end_time      # end_time is also in milliseconds
+    
+    # Extract the audio slice
+    audio_slice = audio[start_time_ms:end_time_ms]
+    
+    return audio_slice
+
+
+def save_audio(audio, output_audio_path):
+    # Export the audio as an mp3 file
+    audio.export(output_audio_path, format="mp3")
+    print(f"Audio saved to {output_audio_path}")
+
+
+def extract_event_audio(data, video_path, output_dir, context_time=10000):
+    events = extract_events_with_context(data, context_time)
+
+    for event in events:
+        event_label = event["label"]
+        event_position = event["event_position"]
+        start_time = event["start_time"]
+        end_time = event["end_time"]
+        half = event["gameTime"][:1]
+        unique_index = event["index"]
+        
+        # Define video path (assuming same video file name pattern as before)
+        path = os.path.join(video_path, f"{half}_720p.mkv")
+        if not os.path.exists(path):
+            print(f"Error: Video file {path} does not exist.")
+            continue
+
+        # Create label-specific folder if not exists
+        label_rank = RANKINGS.get(event_label, 15)  # Default rank to 15 if label is not in RANKINGS
+        folder_name = event_label if label_rank <= 10 else "nothing"
+        label_dir = os.path.join(output_dir, folder_name)
+        if not os.path.exists(label_dir):
+            os.makedirs(label_dir)
+
+        # Extract audio slice
+        audio = extract_audio_in_timeframe(path, start_time, end_time)
+
+        # Save the audio
+        if audio:
+            output_audio_path = os.path.join(label_dir, f"{folder_name}_half_{half}_at_{event_position}_index_{unique_index}.mp3")
+            save_audio(audio, output_audio_path)
+
+
+def process_league_audio(root_path):
+    for league in os.listdir(root_path):
+        league_path = os.path.join(root_path, league)
+        if not os.path.isdir(league_path):
+            continue
+
+        for season in os.listdir(league_path):
+            season_path = os.path.join(league_path, season)
+            if not os.path.isdir(season_path):
+                continue
+
+            for match in os.listdir(season_path):
+                match_path = os.path.join(season_path, match)
+                if not os.path.isdir(match_path):
+                    continue
+
+                # Load the JSON file
+                label_file_path = os.path.join(match_path, "Labels-v2.json")
+                if not os.path.exists(label_file_path):
+                    print(f"No label file found in {match_path}. Skipping...")
+                    continue
+
+                with open(label_file_path) as f:
+                    data = json.load(f)
+
+                # Define output directory
+                output_dir = os.path.join(root_path, "extracted_audio")
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+
+                # Extract audio for all events and store in respective label folders
+                print(f"Processing match: {match}")
+                extract_event_audio(data, match_path, output_dir)
+
+
+# Root path for the videos
+root_path = "/Users/devadarshini/Downloads/'/Users/devadarshini/Desktop/dataset/"
+
+# Process all league videos and extract audio
+process_league_audio(root_path)
+# Load features and labels from disk
+load_path = r"/Users/devadarshini/Desktop/dataset/labels.pt"
+loaded_data = torch.load(load_path)
+
+all_features = loaded_data['features']
+all_labels = loaded_data['labels']
+label_to_index = loaded_data['label_to_index']
+unique_labels = loaded_data['unique_labels']
+
+print("Features and labels loaded successfully.")
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset, random_split
+
+
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+print(f"Using device: {device}")
+
+# Define Enhanced GRU Model
+class EnhancedGRUModel(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=2, dropout=0.5):
+        super(EnhancedGRUModel, self).__init__()
+        # Updated GRU with bidirectional=True
+        self.gru = nn.GRU(
+            input_size=input_size, 
+            hidden_size=hidden_size // 2,  # Adjusted for bidirectional GRU
+            num_layers=num_layers, 
+            batch_first=True, 
+            dropout=dropout, 
+            bidirectional=True
+        )
+        self.fc = nn.Linear(hidden_size, output_size)
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, x):
+        out, _ = self.gru(x)
+        out = self.dropout(out[:, -1, :])  # Take the last time step
+        return self.fc(out)
+
+
+class LabelSmoothingLoss(nn.Module):
+    def __init__(self, smoothing=0.1):
+        super(LabelSmoothingLoss, self).__init__()
+        self.smoothing = smoothing
+
+    def forward(self, predictions, targets):
+        num_classes = predictions.size(1)
+        smoothed_labels = (1 - self.smoothing) * torch.nn.functional.one_hot(targets, num_classes) \
+                          + self.smoothing / num_classes
+        log_preds = torch.nn.functional.log_softmax(predictions, dim=1)
+        return -torch.sum(smoothed_labels * log_preds) / predictions.size(0)
+
+
+
+def restrict_to_category_limit(features, labels, limit=150):
+    category_counts = {}
+    selected_indices = []
+    
+    for i, label in enumerate(labels):
+        label_val = label.item()  # Assuming labels are torch tensors
+        if label_val not in category_counts:
+            category_counts[label_val] = 0
+        if category_counts[label_val] < limit:
+            selected_indices.append(i)
+            category_counts[label_val] += 1
+    
+    # Filter features and labels
+    restricted_features = features[selected_indices]
+    restricted_labels = labels[selected_indices]
+    return restricted_features, restricted_labels
+
+restricted_features, restricted_labels = restrict_to_category_limit(all_features, all_labels)
+dataset = TensorDataset(restricted_features, restricted_labels)
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
+
+# Hyperparameters
+input_size = 1000
+hidden_size = 2048  # Double the hidden size for bidirectional GRU
+output_size = len(set(all_labels.numpy()))
+num_epochs = 30
+learning_rate = 0.001
+
+# Model, Loss, and Optimizer
+model = EnhancedGRUModel(input_size, hidden_size, output_size).to(device)
+criterion = LabelSmoothingLoss(smoothing=0.1)
+optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.8)
+
+
+for epoch in range(num_epochs):
+    # Training
+    model.train()
+    train_loss = 0
+    for features_batch, labels_batch in train_loader:
+        features_batch, labels_batch = features_batch.to(device), labels_batch.to(device)
+        optimizer.zero_grad()
+        outputs = model(features_batch)
+        loss = criterion(outputs, labels_batch)
+        loss.backward()
+        optimizer.step()
+        train_loss += loss.item()
+    train_loss /= len(train_loader)
+
+    # Validation
+    model.eval()
+    val_loss = 0
+    with torch.no_grad():
+        for features_batch, labels_batch in val_loader:
+            features_batch, labels_batch = features_batch.to(device), labels_batch.to(device)
+            outputs = model(features_batch)
+            loss = criterion(outputs, labels_batch)
+            val_loss += loss.item()
+    val_loss /= len(val_loader)
+
+    # Scheduler step
+    scheduler.step()
+    print(f"Epoch [{epoch + 1}/{num_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+
+# Save the model after training completes
+torch.save(model.state_dict(), 'final_gru_model.pth')
+print("Final model saved!")
+import torch
+
+# Load the .pt file
+file_path = "/Users/devadarshini/Desktop/dataset/labels.pt"  
+data = torch.load(file_path)
+
+
+if isinstance(data, torch.Tensor):
+    print(f"Shape of tensor: {data.shape}")
+elif isinstance(data, dict):
+    print("Shapes of tensors in the dictionary:")
+    for key, value in data.items():
+        if isinstance(value, torch.Tensor):
+            print(f"{key}: {value.shape}")
+        else:
+            print(f"{key}: Non-tensor type ({type(value)})")
+elif isinstance(data, list):
+    print("Shapes of tensors in the list:")
+    for i, item in enumerate(data):
+        if isinstance(item, torch.Tensor):
+            print(f"Item {i}: {item.shape}")
+        else:
+            print(f"Item {i}: Non-tensor type ({type(item)})")
+else:
+    print(f"Loaded data is of type {type(data)}")
+import os
+import torch
+import torch.nn as nn
+import cv2
+import numpy as np
+from torchvision import transforms
+from torchvision.models import resnet50
+import torch.nn.functional as F
+from collections import Counter
+import itertools
+
+class HighlightGenerator:
+    def __init__(self, model_path='final_gru_model.pth'):
+        # Rankings dictionary
+        self.rankings = {
+            "Kick-off": 1, "Goal": 2, "Shots on target": 3, "Red card": 4, 
+            "Corner": 5, "Yellow card": 6, "Shots off target": 7, 
+            "Foul": 8, "Direct free-kick": 9, "Offside": 10, "nothing": 11
+        }
+
+        # Device configuration
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        # Load the model with weights_only=True
+        checkpoint = torch.load(model_path, map_location=self.device, weights_only=True)
+        
+        # Model parameters
+        input_size = 1000  # ResNet feature size
+        hidden_size = 2048
+        output_size = checkpoint['output_size']
+        
+        # Initialize model
+        self.model = EnhancedGRUModel(input_size, hidden_size, output_size).to(self.device)
+        
+        # Load state dict with strict=False to ignore missing keys
+        self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        self.model.eval()
+        
+        # Store label mapping
+        self.label_to_index = checkpoint['label_to_index']
+        self.index_to_label = {v: k for k, v in self.label_to_index.items()}
+        
+        # ResNet feature extractor
+        resnet = resnet50(pretrained=True)
+        self.feature_extractor = torch.nn.Sequential(*list(resnet.children())[:-1])
+        self.feature_extractor.to(self.device)
+        self.feature_extractor.eval()
+        
+        # Image transformations
+        self.transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+    def extract_features(self, video_path):
+        """Extract features from video clips"""
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        clip_duration = 20  # seconds
+        clip_frames = int(fps * clip_duration)
+        
+        video_features = []
+        video_clips = []
+        clip_labels = []
+        
+        frame_count = 0
+        current_clip = []
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            current_clip.append(frame)
+            frame_count += 1
+            
+            # When clip is full or video ends
+            if len(current_clip) == clip_frames:
+                # Convert clip to features
+                clip_tensor = self.process_clip(current_clip)
+                video_features.append(clip_tensor)
+                video_clips.append(current_clip)
+                
+                # Reset clip
+                current_clip = []
+        
+        # Handle last incomplete clip if exists
+        if current_clip:
+            # Pad the clip to match the expected length
+            while len(current_clip) < clip_frames:
+                current_clip.append(current_clip[-1])  # Repeat last frame
+            
+            clip_tensor = self.process_clip(current_clip)
+            video_features.append(clip_tensor)
+            video_clips.append(current_clip)
+        
+        cap.release()
+        
+        return video_features, video_clips
+
+    def process_clip(self, clip):
+        clip_features = []
+        for frame in clip:
+            # Convert to tensor and extract features
+            input_tensor = self.transform(frame).unsqueeze(0).to(self.device)
+            with torch.no_grad():
+                features = self.feature_extractor(input_tensor)
+                clip_features.append(features.squeeze().cpu().numpy())
+        
+        # Convert list of numpy arrays to a single numpy array
+        clip_features_array = np.array(clip_features)
+        
+        # Convert to tensor
+        return torch.tensor(clip_features_array).float().unsqueeze(0)
+
+    def predict_highlights(self, video_features):
+        """Predict highlights for each clip"""
+        predictions = []
+        with torch.no_grad():
+            for features in video_features:
+                features = features.to(self.device)
+                output = self.model(features)
+                prob = F.softmax(output, dim=1)
+                pred = torch.argmax(prob, dim=1).item()
+                predicted_label = self.index_to_label[pred]
+                predictions.append(predicted_label)
+                print(f"Predicted label for the clip: {predicted_label}")  # Print predicted label for each clip
+        
+        return predictions
+
+    def create_highlights(self, video_path, highlight_duration_minutes):
+        """
+        Generate highlights with a specific stitching strategy:
+        1. Start with a Kick-off clip
+        2. Distribute Goal clips sequentially throughout the video
+        3. Add other clips based on ranking
+        """
+        # Extract features and predict labels
+        video_features, video_clips = self.extract_features(video_path)
+        predictions = self.predict_highlights(video_features)
+        
+        # Group clips by label
+        labeled_clips = {}
+        for label, clip in zip(predictions, video_clips):
+            if label not in labeled_clips:
+                labeled_clips[label] = []
+            labeled_clips[label].append(clip)
+        
+        # Sort labels by ranking
+        sorted_labels = sorted(self.rankings.keys(), key=lambda x: self.rankings[x])
+        
+        # Prepare final highlight clips
+        highlight_clips = []
+        total_duration = 0
+        max_duration = highlight_duration_minutes * 60
+        
+        # Get video capture details
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        clip_duration = len(video_clips[0]) / fps
+        cap.release()
+        
+        # Strategy for clip selection and sequential placement
+        
+        # 1. Start with a Kick-off clip if available
+        if "Kick-off" in labeled_clips and labeled_clips["Kick-off"]:
+            highlight_clips.append(labeled_clips["Kick-off"].pop(0))
+            total_duration += clip_duration
+        
+        # Prepare Goal clips for sequential insertion
+        goal_clips = labeled_clips.get("Goal", [])
+        
+        # Tracking clip order for goal insertion
+        label_clip_counts = {label: 0 for label in self.rankings.keys()}
+        
+        # Add clips to fill the highlight duration
+        while total_duration < max_duration:
+            for label in sorted_labels:
+                # Skip if we've reached max duration
+                if total_duration >= max_duration:
+                    break
+                
+                # Special handling for Goal clips
+                if label == "Goal":
+                    # If goal clips are available, insert them sequentially
+                    if goal_clips:
+                        highlight_clips.append(goal_clips.pop(0))
+                        total_duration += clip_duration
+                        continue
+                
+                # Add clips for other labels
+                if label in labeled_clips and labeled_clips[label]:
+                    highlight_clips.append(labeled_clips[label].pop(0))
+                    total_duration += clip_duration
+                    label_clip_counts[label] += 1
+        
+        # Video writing process
+        output_path = f'videos/highlights/highlights_{highlight_duration_minutes}min.mp4'
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        
+        # Create video writer
+        out = cv2.VideoWriter(output_path, fourcc, fps, 
+                               (highlight_clips[0][0].shape[1], highlight_clips[0][0].shape[0]))
+        
+        # Stitch clips together by writing frames
+        for clip in highlight_clips:
+            for frame in clip:
+                out.write(frame)
+        
+        out.release()
+        
+        return output_path
+        
+def main():
+    # Get video path from user
+    video_path = '/Users/devadarshini/Desktop/1_720p.mkv'
+    
+    # Validate video path
+    if not os.path.exists(video_path):
+        print("Invalid video path. Please check and try again.")
+        return
+    
+    # Ask for highlight duration
+    while True:
+        try:
+            duration = int(input("How many minutes of highlights do you want? (3/5): "))
+            if duration in [3, 5]:
+                break
+            else:
+                print("Please choose 3 or 5 minutes.")
+        except ValueError:
+            print("Please enter a valid number.")
+    
+    # Generate highlights
+    generator = HighlightGenerator()
+    output_video = generator.create_highlights(video_path, duration)
+    
+    print(f"Highlights generated successfully: {output_video}")
+
+if __name__ == "__main__":
+    main()
