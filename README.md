@@ -9,21 +9,21 @@ This project automates the generation of soccer match highlights by downloading 
 
 ### **Data Preparation**
 - **Dataset Source**: Utilizes the SoccerNet dataset, which includes full soccer match videos and JSON files with detailed annotations of key events.
-- **Clip Extraction**: Parses the JSON annotations to extract 20-second video clips around each key moment. For example, if a goal occurs at 20 minutes, the script extracts a clip from 19:50 to 20:10 and saves it in the respective **goals** folder.
-- **Organized Training Data**: Creates labeled folders (e.g., `goals`, `fouls`, `corners`) containing 20-second clips of corresponding actions.
+- **Clip Extraction**: Parses the JSON annotations to extract 10-second video clips around each key moment. For example, if a goal occurs at 20 minutes, the script extracts a clip from 19:55 to 20:05 and saves it in the respective **goals** folder.
+- **Organized Training Data**: Creates labeled folders (e.g., `goals`, `fouls`, `corners`) containing 10-second clips of corresponding actions.
 
 ---
 
 ### **Model Training**
-- **Feature Extraction**: Converts 20-second video clips into tensors using a pre-trained **ResNet-50** model, extracting frame-level feature vectors.
+- **Feature Extraction**: Converts 10-second video clips into tensors using a pre-trained **ResNet-50** model, extracting frame-level feature vectors.
 - **Training Process**: Pairs the ResNet-encoded tensors with their respective labels (from the folder names) and feeds them into a custom **GRU model with attention**.
 - **Fine-Tuning**: Fine-tunes the GRU model to accurately classify the type of action happening in each clip (e.g., goal, foul, corner).
-- **Output**: Produces a trained model capable of identifying soccer actions from 20-second video clips.
+- **Output**: Produces a trained model capable of identifying soccer actions from 10-second video clips.
 
 ---
 
 ### **Action Detection**
-- **Video Segmentation**: Splits a full soccer match video into 20-second segments.
+- **Video Segmentation**: Splits a full soccer match video into 10-second segments.
 - **Action Classification**: Passes each segment through the trained model, which identifies the type of action occurring in the clip (e.g., goal, foul, kickoff).
 - **Action Ranking**: Assigns importance scores to actions based on pre-defined rankings to prioritize key moments.
 
